@@ -356,7 +356,7 @@ void fat32_stat(const char* name) {
     kprint("\n");
 }
 
-void fat32_rm(const char* name) {
+void fat32_rm(const char* name, int flags) {
     if (!current_drive) return;
     
     // We need to find the entry AND its index in the current directory sector
@@ -390,7 +390,7 @@ void fat32_rm(const char* name) {
             entries[i].name[0] = 0xE5;
             ata_write_sectors(current_drive, dir_lba, bpb.sectors_per_cluster, buf);
             
-            kprint("Deleted: "); kprint(name); kprint("\n");
+            if (!(flags & 1)) { kprint("Deleted: "); kprint(name); kprint("\n"); }
             kfree(buf);
             return;
         }
@@ -447,7 +447,7 @@ void fat32_touch(const char* name) {
     kprint("Created file: "); kprint(name); kprint("\n");
 }
 
-void fat32_echo(const char* name, const char* content) {
+void fat32_echo(const char* name, const char* content, int flags) {
     if (!current_drive) {
         kprint("Error: No drive mounted\n");
         return;
@@ -474,7 +474,7 @@ void fat32_echo(const char* name, const char* content) {
     ata_write_sectors(current_drive, cluster_to_lba(clus), 1, buf);
     create_entry(name, FAT_ATTR_ARCHIVE, clus, len);
     kfree(buf);
-    kprint("Wrote to "); kprint(name); kprint("\n");
+    if (!(flags & 1)) { kprint("Wrote to "); kprint(name); kprint("\n"); }
 }
 
 void fat32_copy(const char* src, const char* dest) {
@@ -532,7 +532,7 @@ void fat32_move(const char* src, const char* dest) {
     // Simple move: copy then remove
     // A better implementation would just change the directory entry
     fat32_copy(src, dest);
-    fat32_rm(src);
+    fat32_rm(src, 0);
 }
 
 int fat32_read(const char* name, char* buffer, u32 max_len) {

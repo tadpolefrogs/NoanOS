@@ -74,8 +74,8 @@ static void save_history(void) {
         strcat(buf, history[i]);
         strcat(buf, "\n");
     }
-    _syscall2(SYS_RM, (u32)history_file, 0);
-    _syscall2(SYS_ECHO_FILE, (u32)history_file, (u32)buf);
+    _syscall2(SYS_RM, (u32)history_file, 1);
+    _syscall3(SYS_ECHO_FILE, (u32)history_file, (u32)buf, 1);
 }
 
 static void add_history(const char* cmd) {

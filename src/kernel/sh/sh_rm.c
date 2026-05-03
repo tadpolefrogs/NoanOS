@@ -6,6 +6,6 @@ int sh_rm(int argc, char** argv) {
         _syscall1(SYS_PRINT, (u32)"Usage: rm <name>\n");
         return 1;
     }
-    _syscall1(SYS_RM, (u32)argv[1]);
+    _syscall2(SYS_RM, (u32)argv[1], 0);
     return 0;
 }

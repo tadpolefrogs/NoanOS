@@ -61,13 +61,13 @@ u32 syscall_handler(u32 esp) {
             fat32_mkdir((const char*)arg1);
             break;
         case SYS_RM:
-            fat32_rm((const char*)arg1);
+            fat32_rm((const char*)arg1, (int)arg2);
             break;
         case SYS_TOUCH:
             fat32_touch((const char*)arg1);
             break;
         case SYS_ECHO_FILE:
-            fat32_echo((const char*)arg1, (const char*)arg2);
+            fat32_echo((const char*)arg1, (const char*)arg2, (int)arg3);
             break;
         case SYS_CP:
             fat32_copy((const char*)arg1, (const char*)arg2);

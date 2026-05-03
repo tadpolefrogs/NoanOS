@@ -10,6 +10,7 @@ static char text_buffer[EDITOR_MAX_SIZE];
 static int cursor_x = 0;
 static int cursor_y = 0;
 static int text_len = 0;
+static int viewport_line = 0;
 
 static void editor_print(const char* s) {
     _syscall1(SYS_PRINT, (u32)s);
@@ -23,9 +24,9 @@ static void update_screen_cursor(void) {
     // ANSI: \033[y;xH (1-indexed)
     editor_print("\033[");
     
-    int y = cursor_y + 1;
-    if (y >= 10) { editor_putchar('0' + (y/10)); editor_putchar('0' + (y%10)); }
-    else editor_putchar('0' + y);
+    int display_y = cursor_y - viewport_line + 1;
+    if (display_y >= 10) { editor_putchar('0' + (display_y/10)); editor_putchar('0' + (display_y%10)); }
+    else editor_putchar('0' + display_y);
     
     editor_putchar(';');
     
@@ -39,8 +40,22 @@ static void update_screen_cursor(void) {
 static void refresh_screen(void) {
     _syscall0(SYS_CLEAR);
     editor_print("--- VIM LITE - Ctrl+S: Save, Ctrl+Q: Quit ---\n");
-    for (int i = 0; i < text_len; i++) {
-        editor_putchar(text_buffer[i]);
+    
+    int current_line = 0;
+    int display_line = 0;
+    
+    for (int i = 0; i < text_len && display_line < EDITOR_HEIGHT - 1; i++) {
+        if (current_line >= viewport_line && current_line < viewport_line + EDITOR_HEIGHT - 1) {
+            editor_putchar(text_buffer[i]);
+            if (text_buffer[i] == '\n') {
+                display_line++;
+                current_line++;
+            }
+        } else {
+            if (text_buffer[i] == '\n') {
+                current_line++;
+            }
+        }
     }
     update_screen_cursor();
 }
@@ -59,21 +74,9 @@ int sh_vim(int argc, char** argv) {
         text_len = read_bytes;
         text_buffer[text_len] = '\0';
         
-        // Calculate initial cursor pos based on text_len (simplified: end of file)
         cursor_x = 0;
         cursor_y = 1;
-        for(int i=0; i<text_len; i++) {
-            if(text_buffer[i] == '\n') {
-                cursor_y++;
-                cursor_x = 0;
-            } else {
-                cursor_x++;
-                if(cursor_x >= EDITOR_WIDTH) {
-                    cursor_x = 0;
-                    cursor_y++;
-                }
-            }
-        }
+        viewport_line = 0;
     }
 
     refresh_screen();
@@ -86,8 +89,8 @@ int sh_vim(int argc, char** argv) {
             _syscall0(SYS_CLEAR);
             return 0;
         } else if (c == 19) { // Ctrl+S
-            _syscall2(SYS_RM, (u32)filename, 0); // Delete if exists
-            _syscall2(SYS_ECHO_FILE, (u32)filename, (u32)text_buffer);
+            _syscall2(SYS_RM, (u32)filename, 0);
+            _syscall3(SYS_ECHO_FILE, (u32)filename, (u32)text_buffer, 0);
             editor_print("\nSaved to "); editor_print(filename);
             _syscall0(SYS_YIELD);
             refresh_screen();
@@ -95,20 +98,42 @@ int sh_vim(int argc, char** argv) {
             c = _syscall0(SYS_READ);
             if (c == '[') {
                 c = _syscall0(SYS_READ);
-                if (c == 'A') { if (cursor_y > 1) cursor_y--; } // Up
-                else if (c == 'B') { if (cursor_y < EDITOR_HEIGHT) cursor_y++; } // Down
-                else if (c == 'C') { if (cursor_x < EDITOR_WIDTH - 1) cursor_x++; } // Right
-                else if (c == 'D') { if (cursor_x > 0) cursor_x--; } // Left
+                if (c == 'A') { // Up
+                    if (cursor_y > 1) {
+                        cursor_y--;
+                        if (cursor_y - viewport_line < 1) viewport_line--;
+                        refresh_screen();
+                    }
+                } else if (c == 'B') { // Down
+                    int total_lines = 1;
+                    for (int i = 0; i < text_len; i++) {
+                        if (text_buffer[i] == '\n') total_lines++;
+                    }
+                    if (cursor_y < total_lines) {
+                        cursor_y++;
+                        if (cursor_y - viewport_line >= EDITOR_HEIGHT - 1) viewport_line++;
+                        refresh_screen();
+                    }
+                } else if (c == 'C') { // Right
+                    if (cursor_x < EDITOR_WIDTH - 1) {
+                        cursor_x++;
+                        update_screen_cursor();
+                    }
+                } else if (c == 'D') { // Left
+                    if (cursor_x > 0) {
+                        cursor_x--;
+                        update_screen_cursor();
+                    }
+                }
             }
-            update_screen_cursor();
         } else if (c == '\b') {
             if (text_len > 0) {
                 text_len--;
                 text_buffer[text_len] = '\0';
                 
-                // Recalculate cursor
                 cursor_x = 0;
                 cursor_y = 1;
+                viewport_line = 0;
                 for(int i=0; i<text_len; i++) {
                     if(text_buffer[i] == '\n') {
                         cursor_y++;
@@ -128,6 +153,7 @@ int sh_vim(int argc, char** argv) {
                 text_buffer[text_len++] = '\n';
                 cursor_x = 0;
                 cursor_y++;
+                if (cursor_y - viewport_line >= EDITOR_HEIGHT - 1) viewport_line++;
                 refresh_screen();
             }
         } else if (c >= 32 && c < 127) {
@@ -138,6 +164,7 @@ int sh_vim(int argc, char** argv) {
                 if (cursor_x >= EDITOR_WIDTH) {
                     cursor_x = 0;
                     cursor_y++;
+                    if (cursor_y - viewport_line >= EDITOR_HEIGHT - 1) viewport_line++;
                 }
             }
         }

@@ -1,2 +1,2 @@
 make -C boot clean
-make -C boot
+make -C boot run
