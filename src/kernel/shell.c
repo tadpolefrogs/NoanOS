@@ -1,76 +1,193 @@
-#include "include/types.h"
 #include "include/syscall.h"
+#include "include/types.h"
+#include "include/commands.h"
 
-static int syscall0(int num) {
-    int ret;
-    asm volatile("mov %1, %%eax; int $0x80" : "=a"(ret) : "r"(num));
-    return ret;
-}
+#define shell_print(s) _syscall1(SYS_PRINT, (u32)(s))
+#define shell_putchar(c) _syscall1(SYS_PUTCHAR, (u32)(c))
 
-static int syscall1(int num, u32 a1) {
-    int ret;
-    asm volatile("mov %1, %%eax; mov %2, %%ebx; int $0x80" : "=a"(ret) : "r"(num), "r"(a1));
-    return ret;
-}
+static char current_path[256] = "/";
+
+#define MAX_HISTORY 20
+static char history[MAX_HISTORY][128];
+static int history_count = 0;
+static int history_index = -1;
+static const char* history_file = ".sh_hist";
 
 static int strcmp(const char* s1, const char* s2) {
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
 }
 
+static int strncmp(const char* s1, const char* s2, size_t n) {
+    while (n && *s1 && (*s1 == *s2)) {
+        s1++; s2++; n--;
+    }
+    if (n == 0) return 0;
+    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+}
+
+static void strcpy(char* dest, const char* src) {
+    while ((*dest++ = *src++));
+}
+
+static void strcat(char* dest, const char* src) {
+    while (*dest) dest++;
+    while ((*dest++ = *src++));
+}
+
+static size_t strlen(const char* s) {
+    size_t len = 0;
+    while (*s++) len++;
+    return len;
+}
+
+static int shell_getchar(void) {
+    int c;
+    while ((c = _syscall0(SYS_READ)) == 0) {
+        _syscall0(SYS_YIELD);
+    }
+    return c;
+}
+
+static void load_history(void) {
+    char buf[2048];
+    int bytes = _syscall3(SYS_READ_FILE, (u32)history_file, (u32)buf, 2047);
+    if (bytes <= 0) return;
+    buf[bytes] = '\0';
+
+    char* p = buf;
+    while (*p && history_count < MAX_HISTORY) {
+        char* start = p;
+        while (*p && *p != '\n') p++;
+        if (*p == '\n') {
+            *p = '\0';
+            strcpy(history[history_count++], start);
+            p++;
+        }
+    }
+}
+
+static void save_history(void) {
+    char buf[2048];
+    buf[0] = '\0';
+    for (int i = 0; i < history_count; i++) {
+        strcat(buf, history[i]);
+        strcat(buf, "\n");
+    }
+    _syscall2(SYS_RM, (u32)history_file, 0);
+    _syscall2(SYS_ECHO_FILE, (u32)history_file, (u32)buf);
+}
+
+static void add_history(const char* cmd) {
+    if (strlen(cmd) == 0) return;
+    if (history_count > 0 && strcmp(cmd, history[history_count - 1]) == 0) return;
+
+    if (history_count < MAX_HISTORY) {
+        strcpy(history[history_count++], cmd);
+    } else {
+        for (int i = 0; i < MAX_HISTORY - 1; i++) {
+            strcpy(history[i], history[i + 1]);
+        }
+        strcpy(history[MAX_HISTORY - 1], cmd);
+    }
+    save_history();
+}
+
 void shell_main(void) {
-    // Note: We can't call kprint directly in user mode, must use syscall
-    // But there's a bootstrapping issue here - we need to know if syscalls work
-    // Let's test with a simple write to the terminal
-    
-    syscall1(SYS_PRINT, (u32)"=== SHELL STARTED IN USER MODE ===\n");
-    syscall1(SYS_PRINT, (u32)"Welcome to Simple OS (User Mode Ring 3)!\n");
-    syscall1(SYS_PRINT, (u32)"> ");
+    load_history();
+    shell_print("=== NoanOS Shell (User Mode) ===\n");
+    shell_print("Type 'help' for commands.\n");
 
     char cmd[128];
     int len = 0;
 
-    while (1) {
-        syscall1(SYS_PRINT, (u32)"[waiting for input]\n");
-        int c = syscall0(SYS_READ);
-        syscall1(SYS_PRINT, (u32)"[got char: ");
-        syscall1(SYS_PRINT, (u32)(u32)c);
-        syscall1(SYS_PRINT, (u32)"]\n");
-        if (c == 0) {
-            syscall0(SYS_YIELD);
-            continue;
-        }
+    shell_print(current_path);
+    shell_print(" > ");
 
-        if (c == '\n') {
-            syscall1(SYS_PUTCHAR, (u32)'\n');
+    while (1) {
+        int c = shell_getchar();
+
+        if (c == '\n' || c == '\r') {
+            shell_putchar('\n');
             cmd[len] = '\0';
             
-            if (strcmp(cmd, "help") == 0) {
-                syscall1(SYS_PRINT, (u32)"User Commands: help, ls, clear, exit\n");
-            } else if (strcmp(cmd, "ls") == 0) {
-                syscall0(SYS_LS);
-            } else if (strcmp(cmd, "clear") == 0) {
-                syscall0(SYS_CLEAR);
-            } else if (strcmp(cmd, "exit") == 0) {
-                syscall0(SYS_EXIT);
-                while(1);
-            } else if (len > 0) {
-                syscall1(SYS_PRINT, (u32)"Unknown command: ");
-                syscall1(SYS_PRINT, (u32)cmd);
-                syscall1(SYS_PRINT, (u32)"\n");
+            if (len > 0) {
+                add_history(cmd);
+                history_index = -1;
+
+                if (strcmp(cmd, "pwd") == 0) {
+                    shell_print(current_path);
+                    shell_print("\n");
+                } 
+                else if (strncmp(cmd, "cd ", 3) == 0) {
+                    const char* path = &cmd[3];
+                    int ret = _syscall1(SYS_CD, (u32)path);
+                    if (ret == 0) {
+                        if (strcmp(path, "..") == 0) {
+                            if (strcmp(current_path, "/") != 0) {
+                                int i = strlen(current_path) - 1;
+                                if (current_path[i] == '/') current_path[i--] = '\0';
+                                while (i >= 0 && current_path[i] != '/') current_path[i--] = '\0';
+                                if (i == 0 && current_path[0] == '/') current_path[1] = '\0';
+                                else if (i < 0) strcpy(current_path, "/");
+                            }
+                        } else if (strcmp(path, "/") == 0) {
+                            strcpy(current_path, "/");
+                        } else {
+                            if (current_path[strlen(current_path)-1] != '/') strcat(current_path, "/");
+                            strcat(current_path, path);
+                        }
+                    }
+                }
+                else {
+                    execute_command(cmd);
+                }
             }
 
             len = 0;
-            syscall1(SYS_PRINT, (u32)"> ");
+            history_index = -1;
+            shell_print(current_path);
+            shell_print(" > ");
         } else if (c == '\b') {
             if (len > 0) {
                 len--;
-                syscall1(SYS_PUTCHAR, (u32)'\b');
+                shell_putchar('\b');
             }
-        } else {
+        } else if (c == '\033') { // Arrow Keys
+            c = shell_getchar();
+            if (c == '[') {
+                c = shell_getchar();
+                if (c == 'A') { // Up
+                    if (history_count > 0 && history_index < history_count - 1) {
+                        // Clear current line
+                        for (int i = 0; i < len; i++) shell_putchar('\b');
+                        
+                        history_index++;
+                        strcpy(cmd, history[history_count - 1 - history_index]);
+                        len = strlen(cmd);
+                        shell_print(cmd);
+                    }
+                } else if (c == 'B') { // Down
+                    if (history_index > -1) {
+                        // Clear current line
+                        for (int i = 0; i < len; i++) shell_putchar('\b');
+                        
+                        history_index--;
+                        if (history_index == -1) {
+                            cmd[0] = '\0';
+                            len = 0;
+                        } else {
+                            strcpy(cmd, history[history_count - 1 - history_index]);
+                            len = strlen(cmd);
+                            shell_print(cmd);
+                        }
+                    }
+                }
+            }
+        } else if (c >= 32 && c < 127) {
             if (len < 127) {
                 cmd[len++] = (char)c;
-                syscall1(SYS_PUTCHAR, (u32)c);
+                shell_putchar(c);
             }
         }
     }

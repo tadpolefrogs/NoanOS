@@ -144,7 +144,7 @@ void fat32_ls(void) {
         kprint("\n");
     }
     if (count == 0) {
-        kprint("(Directory empty)\n");
+        kprint("\n");
     }
     kfree(buf);
 }
@@ -475,4 +475,89 @@ void fat32_echo(const char* name, const char* content) {
     create_entry(name, FAT_ATTR_ARCHIVE, clus, len);
     kfree(buf);
     kprint("Wrote to "); kprint(name); kprint("\n");
+}
+
+void fat32_copy(const char* src, const char* dest) {
+    if (!current_drive) return;
+    fat32_dir_entry_t entry;
+    if (!find_entry(src, &entry)) {
+        kprint("Error: Source file not found\n");
+        return;
+    }
+    if (entry.attr & FAT_ATTR_DIRECTORY) {
+        kprint("Error: Cannot copy a directory\n");
+        return;
+    }
+
+    u32 src_cluster = ((u32)entry.cluster_hi << 16) | entry.cluster_lo;
+    u32 size = entry.file_size;
+
+    u32 dest_cluster = find_free_cluster();
+    if (!dest_cluster) {
+        kprint("Error: No free clusters\n");
+        return;
+    }
+    set_fat_entry(dest_cluster, 0x0FFFFFFF);
+    u32 first_dest_cluster = dest_cluster;
+
+    u16* buf = (u16*)kmalloc(512);
+    if (!buf) return;
+
+    u32 remaining = size;
+    while (remaining > 0 && src_cluster < 0x0FFFFFF8) {
+        ata_read_sectors(current_drive, cluster_to_lba(src_cluster), 1, buf);
+        ata_write_sectors(current_drive, cluster_to_lba(dest_cluster), 1, buf);
+        
+        remaining -= (remaining > 512) ? 512 : remaining;
+        
+        if (remaining > 0) {
+            src_cluster = get_fat_entry(src_cluster);
+            u32 next_dest = find_free_cluster();
+            if (!next_dest) {
+                kprint("Error: Disk full during copy\n");
+                break; 
+            }
+            set_fat_entry(dest_cluster, next_dest);
+            set_fat_entry(next_dest, 0x0FFFFFFF);
+            dest_cluster = next_dest;
+        }
+    }
+
+    create_entry(dest, FAT_ATTR_ARCHIVE, first_dest_cluster, size);
+    kfree(buf);
+    kprint("Copied "); kprint(src); kprint(" to "); kprint(dest); kprint("\n");
+}
+
+void fat32_move(const char* src, const char* dest) {
+    // Simple move: copy then remove
+    // A better implementation would just change the directory entry
+    fat32_copy(src, dest);
+    fat32_rm(src);
+}
+
+int fat32_read(const char* name, char* buffer, u32 max_len) {
+    if (!current_drive) return -1;
+    fat32_dir_entry_t entry;
+    if (!find_entry(name, &entry)) return -1;
+    if (entry.attr & FAT_ATTR_DIRECTORY) return -1;
+
+    u32 cluster = ((u32)entry.cluster_hi << 16) | entry.cluster_lo;
+    u32 size = entry.file_size;
+    if (size > max_len) size = max_len;
+    
+    u32 total_read = 0;
+    u16* buf = (u16*)kmalloc(512);
+    if (!buf) return -1;
+
+    while (total_read < size && cluster < 0x0FFFFFF8 && cluster >= 2) {
+        ata_read_sectors(current_drive, cluster_to_lba(cluster), 1, buf);
+        u8* b = (u8*)buf;
+        for (int i = 0; i < 512 && total_read < size; i++) {
+            buffer[total_read++] = (char)b[i];
+        }
+        cluster = get_fat_entry(cluster);
+    }
+    
+    kfree(buf);
+    return total_read;
 }

@@ -157,6 +157,13 @@ void idt_init(void) {
 
 u32 isr_handler(u32 esp) {
     struct registers* r = (struct registers*)esp;
+    kprint("[FAULT #");
+    kprint_dec(r->int_no);
+    kprint("] at EIP=");
+    kprint_hex(r->eip);
+    kprint(" CS=");
+    kprint_hex(r->cs);
+    kprint("\n");
     return esp;
 }
 

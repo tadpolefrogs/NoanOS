@@ -4,12 +4,14 @@
 #include "include/kprint.h"
 
 #define KEYBOARD_DATA_PORT 0x60
+#define KEYBOARD_STATUS_PORT 0x64
 
 static volatile int shift_held = 0;
+static volatile int ctrl_held = 0;
 static volatile int caps_lock = 0;
-static volatile int shift_lock = 0;   // Persistent toggle
-static volatile int shift_sticky = 0; // One-shot shift
-static volatile int symbol_mode = 0;  // Number row always symbols
+static volatile int shift_lock = 0;
+static volatile int shift_sticky = 0;
+static volatile int symbol_mode = 0;
 static int key_pressed_during_shift = 0;
 static int debug_scancodes = 0;
 
@@ -41,8 +43,16 @@ static const char scancode_ascii_shift[] = {
 
 #define BUFFER_SIZE 256
 static char keyboard_buffer[BUFFER_SIZE];
-static int buffer_head = 0;
-static int buffer_tail = 0;
+static volatile int buffer_head = 0;
+static volatile int buffer_tail = 0;
+
+static void push_char(char c) {
+    int next = (buffer_head + 1) % BUFFER_SIZE;
+    if (next != buffer_tail) {
+        keyboard_buffer[buffer_head] = c;
+        buffer_head = next;
+    }
+}
 
 u32 keyboard_handler(u32 esp) {
     u8 scancode = inb(KEYBOARD_DATA_PORT);
@@ -53,54 +63,76 @@ u32 keyboard_handler(u32 esp) {
         kprint(scancode & 0x80 ? "(UP) " : "(DN) ");
     }
 
-    // LShift: 0x2A, RShift: 0x36
-    if (scancode == 0x2A || scancode == 0x36) {
+    // Modifiers
+    if (scancode == 0x1D) { // Ctrl DN
+        ctrl_held = 1;
+        return esp;
+    }
+    if (scancode == 0x9D) { // Ctrl UP
+        ctrl_held = 0;
+        return esp;
+    }
+    if (scancode == 0x2A || scancode == 0x36) { // Shift DN
         shift_held = 1;
         key_pressed_during_shift = 0;
         return esp;
     }
-    // Release
-    if (scancode == 0xAA || scancode == 0xB6) {
-        if (!key_pressed_during_shift) {
-            shift_sticky = 1; // Sticky!
-        }
+    if (scancode == 0xAA || scancode == 0xB6) { // Shift UP
+        if (!key_pressed_during_shift) shift_sticky = 1;
         shift_held = 0;
         return esp;
     }
 
-    // Caps Lock: 0x3A
-    if (scancode == 0x3A) {
+    if (scancode == 0x3A) { // Caps Lock
         caps_lock = !caps_lock;
         return esp;
     }
 
     if (!(scancode & 0x80)) { // Key press
         key_pressed_during_shift = 1;
-        
+
+        // Arrow keys
+        if (scancode == 0x48) { // Up
+            push_char('\033'); push_char('['); push_char('A');
+            return esp;
+        }
+        if (scancode == 0x50) { // Down
+            push_char('\033'); push_char('['); push_char('B');
+            return esp;
+        }
+        if (scancode == 0x4D) { // Right
+            push_char('\033'); push_char('['); push_char('C');
+            return esp;
+        }
+        if (scancode == 0x4B) { // Left
+            push_char('\033'); push_char('['); push_char('D');
+            return esp;
+        }
+
         if (scancode < (int)sizeof(scancode_ascii_nomod)) {
             int use_shift = shift_held || shift_lock || shift_sticky;
             
-            // Symbol mode forces shift on number row
             if (symbol_mode && scancode >= 0x02 && scancode <= 0x0D) {
                 use_shift = !use_shift;
             }
 
             char base_char = scancode_ascii_nomod[scancode];
+            
+            // Handle Ctrl+Key
+            if (ctrl_held && base_char >= 'a' && base_char <= 'z') {
+                push_char(base_char - 'a' + 1); // Ctrl+A is 1, Ctrl+S is 19, etc.
+                return esp;
+            }
+
             if (base_char >= 'a' && base_char <= 'z') {
                 if (caps_lock) use_shift = !use_shift;
             }
 
             char c = use_shift ? scancode_ascii_shift[scancode] : scancode_ascii_nomod[scancode];
-            
             if (c != 0) {
-                int next = (buffer_head + 1) % BUFFER_SIZE;
-                if (next != buffer_tail) {
-                    keyboard_buffer[buffer_head] = c;
-                    buffer_head = next;
-                }
+                push_char(c);
             }
-            
-            shift_sticky = 0; // Reset after one key
+            shift_sticky = 0;
         }
     }
     return esp;
@@ -108,17 +140,20 @@ u32 keyboard_handler(u32 esp) {
 
 void keyboard_init(void) {
     shift_held = 0;
+    ctrl_held = 0;
     caps_lock = 0;
     shift_lock = 0;
     shift_sticky = 0;
     symbol_mode = 0;
+    buffer_head = 0;
+    buffer_tail = 0;
+
+    while (inb(KEYBOARD_STATUS_PORT) & 1) inb(KEYBOARD_DATA_PORT);
     irq_install_handler(1, keyboard_handler);
 }
 
 int keyboard_getchar(void) {
-    if (buffer_head == buffer_tail) {
-        return 0;
-    }
+    if (buffer_head == buffer_tail) return 0;
     int c = (unsigned char)keyboard_buffer[buffer_tail];
     buffer_tail = (buffer_tail + 1) % BUFFER_SIZE;
     return c;

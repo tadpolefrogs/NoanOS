@@ -5,6 +5,7 @@
 #include "include/task.h"
 #include "include/fat32.h"
 #include "include/terminal.h"
+#include "include/power.h"
 
 extern void syscall_stub(void);
 
@@ -50,8 +51,37 @@ u32 syscall_handler(u32 esp) {
             break;
         case SYS_YIELD:
             return task_switch(esp);
+        case SYS_REBOOT:
+            reboot();
+            break;
+        case SYS_SHUTDOWN:
+            shutdown();
+            break;
+        case SYS_MKDIR:
+            fat32_mkdir((const char*)arg1);
+            break;
+        case SYS_RM:
+            fat32_rm((const char*)arg1);
+            break;
+        case SYS_TOUCH:
+            fat32_touch((const char*)arg1);
+            break;
+        case SYS_ECHO_FILE:
+            fat32_echo((const char*)arg1, (const char*)arg2);
+            break;
+        case SYS_CP:
+            fat32_copy((const char*)arg1, (const char*)arg2);
+            break;
+        case SYS_MV:
+            fat32_move((const char*)arg1, (const char*)arg2);
+            break;
+        case SYS_READ_FILE:
+            ret = fat32_read((const char*)arg1, (char*)arg2, arg3);
+            break;
         default:
-            kprint("Unknown syscall\n");
+            kprint("Unknown syscall: ");
+            kprint_dec(num);
+            kprint("\n");
             break;
     }
 
@@ -60,5 +90,7 @@ u32 syscall_handler(u32 esp) {
 }
 
 void syscall_init(void) {
+    kprint("[Setting up syscall gate 0x80]\n");
     idt_set_gate(0x80, (u32)syscall_stub, 0x08, 0xEE); // Ring 3 accessible
+    kprint("[Syscall gate installed]\n");
 }

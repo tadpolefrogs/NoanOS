@@ -18,19 +18,40 @@ void task_init(void) {
 }
 
 void task_create(void* entry, u32 flags) {
+    kprint("TC");  // Just print "TC" to show we got here
+    
     process_t* proc = (process_t*)kmalloc(sizeof(process_t));
+    if (!proc) {
+        kprint("E1");  // Error 1: proc alloc failed
+        return;
+    }
+    
     proc->id = next_pid++;
     proc->state = TASK_READY;
     
-    proc->kstack = (u32)kmalloc(STACK_SIZE) + STACK_SIZE;
-    proc->ustack = (u32)kmalloc(STACK_SIZE) + STACK_SIZE;
+    void* k_ptr = kmalloc(STACK_SIZE);
+    if (!k_ptr) {
+        kprint("E2");  // Error 2: kstack alloc failed
+        return;
+    }
+    proc->kstack = (u32)k_ptr + STACK_SIZE;
+    
+    void* u_ptr = kmalloc(STACK_SIZE);
+    if (!u_ptr) {
+        kprint("E3");  // Error 3: ustack alloc failed
+        return;
+    }
+    proc->ustack = (u32)u_ptr + STACK_SIZE;
 
     u32* stack = (u32*)proc->kstack;
 
     // --- PUSH THE IRET FRAME (Unified: Always 5 dwords) ---
     // Stack for iret: SS, ESP, EFLAGS, CS, EIP
-    *(--stack) = (flags & 0x1) ? 0x23 : 0x10; // SS
-    *(--stack) = (flags & 0x1) ? proc->ustack : (u32)stack; // ESP
+    u16 ss = (flags & 0x1) ? 0x23 : 0x10;
+    u32 esp_val = (flags & 0x1) ? proc->ustack : (u32)stack;
+    
+    *(--stack) = ss;
+    *(--stack) = esp_val;
     *(--stack) = 0x202; // EFLAGS
     *(--stack) = (flags & 0x1) ? 0x1B : 0x08; // CS
     *(--stack) = (u32)entry; // EIP
@@ -57,19 +78,39 @@ void task_create(void* entry, u32 flags) {
     // Add to list
     proc->next = process_list->next;
     process_list->next = proc;
+    
+    kprint("OK");  // Success
 }
 
 u32 task_switch(u32 esp) {
     if (!current_process) return esp;
 
+    // Save current task's esp
+    current_process->esp = esp;
+
+    // Move to next task in the circular list
     process_t* next = current_process->next;
-    while (next->state != TASK_READY && next->state != TASK_RUNNING) {
+    
+    // Safety check: if we're pointing to ourselves, don't switch
+    if (next == current_process) {
+        current_process->state = TASK_RUNNING;
+        return esp;
+    }
+    
+    // Find next task that's not terminated (with safety limit)
+    process_t* start = next;
+    int iterations = 0;
+    while (next->state == TASK_TERMINATED && iterations < 100) {
         next = next->next;
+        iterations++;
+        if (next == start) {
+            // All tasks terminated, stay on current
+            current_process->state = TASK_RUNNING;
+            return esp;
+        }
     }
 
-    if (next == current_process) return esp;
-
-    current_process->esp = esp;
+    // Switch to next
     current_process = next;
     current_process->state = TASK_RUNNING;
 

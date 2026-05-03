@@ -88,7 +88,6 @@ extern irq_handler
 extern syscall_handler
 
 common_stub:
-    cli
     pusha
     mov ax, ds
     push eax
@@ -99,7 +98,7 @@ common_stub:
     mov fs, ax
     mov gs, ax
 
-    mov eax, [esp + 36] ; Get int_no from stack (offset 36)
+    mov eax, [esp + 36] ; Get int_no
     cmp eax, 128
     je .do_syscall
     cmp eax, 32
@@ -107,19 +106,19 @@ common_stub:
     
     push esp            ; Pass registers pointer
     call isr_handler
-    add esp, 4
+    mov esp, eax        ; Switch stack if needed
     jmp .done
     
 .do_irq:
     push esp
     call irq_handler
-    add esp, 4
+    mov esp, eax
     jmp .done
     
 .do_syscall:
     push esp
     call syscall_handler
-    add esp, 4
+    mov esp, eax
 
 .done:
     pop eax

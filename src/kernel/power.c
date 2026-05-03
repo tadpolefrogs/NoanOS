@@ -4,10 +4,23 @@
 
 void reboot(void) {
     kprint("Rebooting...\n");
+    
+    // Clear PS/2 output buffer before sending reset command
+    while (inb(0x64) & 0x01) {
+        inb(0x60);
+    }
+    
+    // Pulse the reset line
     u8 good = 0x02;
-    while (good & 0x02)
+    while (good & 0x02) {
         good = inb(0x64);
+    }
     outb(0x64, 0xFE);
+    
+    // If PS/2 reset fails, try a triple fault (standard fallback)
+    kprint("PS/2 reset failed, trying triple fault...\n");
+    asm volatile("lidt (,%0,)"::"r"(0));
+    asm volatile("int $3");
 }
 
 void shutdown(void) {

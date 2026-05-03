@@ -71,5 +71,8 @@ void fat32_touch(const char* name);
 void fat32_echo(const char* name, const char* content);
 void fat32_rm(const char* name);
 void fat32_stat(const char* name);
+void fat32_copy(const char* src, const char* dest);
+void fat32_move(const char* src, const char* dest);
+int fat32_read(const char* name, char* buffer, u32 max_len);
 
 #endif
