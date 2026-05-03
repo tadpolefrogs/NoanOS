@@ -14,31 +14,23 @@
 
 void kmain(u32 boot_drive) {
     kprint_init();
-
+    
     kprint("Initializing Malloc (4MB heap)...\n");
     malloc_init(0x200000, 4 * 1024 * 1024);
-
     kprint("Initializing GDT & TSS...\n");
     gdt_init();
-
     kprint("Initializing IDT...\n");
     idt_init();
-
     kprint("Initializing Syscalls...\n");
     syscall_init();
-
     kprint("Initializing Task Management...\n");
     task_init();
-
     kprint("Initializing Timer (100Hz)...\n");
     timer_init(100);
-
     kprint("Initializing Keyboard...\n");
     keyboard_init();
-
     kprint("Initializing ATA Disk Driver...\n");
     ata_init();
-    
     kprint("Enabling Interrupts...\n");
     asm volatile("sti");
 
@@ -65,11 +57,10 @@ void kmain(u32 boot_drive) {
         }
     }
     
-    kprint("Spawning User Mode Shell...\n");
+    kprint("Spawning Shell...\n");
     // Flag 0x1 indicates User Mode
     task_create(shell_main, 0x1);
     
-    kprint("Kernel entering idle loop...\n");
     while(1) {
         asm volatile("hlt");
     }
