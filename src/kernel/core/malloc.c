@@ -65,23 +65,25 @@ void kfree(void* ptr) {
     }
 }
 
-void malloc_stats(void) {
+void get_malloc_info(malloc_info_t* info) {
+    if (!info) return;
+    
     struct block_header* curr = free_list;
-    int total_blocks = 0;
-    int free_blocks = 0;
-    size_t total_free_size = 0;
+    info->total_size = 0;
+    info->used_size = 0;
+    info->free_size = 0;
+    info->total_blocks = 0;
+    info->free_blocks = 0;
     
     while (curr) {
-        total_blocks++;
+        info->total_blocks++;
+        info->total_size += curr->size + HEADER_SIZE;
         if (curr->is_free) {
-            free_blocks++;
-            total_free_size += curr->size;
+            info->free_blocks++;
+            info->free_size += curr->size;
+        } else {
+            info->used_size += curr->size + HEADER_SIZE;
         }
         curr = curr->next;
     }
-    
-    kprint("Memory Stats:\n");
-    kprint("  Total blocks: "); kprint_dec(total_blocks); kprint("\n");
-    kprint("  Free blocks:  "); kprint_dec(free_blocks); kprint("\n");
-    kprint("  Total free:   "); kprint_dec(total_free_size); kprint(" bytes\n");
 }

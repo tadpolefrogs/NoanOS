@@ -25,6 +25,11 @@
 #define SYS_MV        18
 #define SYS_READ_FILE 19
 #define SYS_PANIC     20
+#define SYS_GET_TIME  21
+#define SYS_GET_DATE  22
+#define SYS_MEM_INFO  23
+#define SYS_LIST_DISKS 24
+#define SYS_STAT      25
 
 void syscall_init(void);
 u32 syscall_handler(u32 esp);
@@ -32,25 +37,25 @@ u32 syscall_handler(u32 esp);
 // User-side syscall wrappers
 static inline int _syscall0(int num) {
     int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(num));
+    asm volatile("int $0x80" : "=a"(ret) : "a"(num) : "memory");
     return ret;
 }
 
 static inline int _syscall1(int num, u32 a1) {
     int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(num), "b"(a1));
+    asm volatile("int $0x80" : "=a"(ret) : "a"(num), "b"(a1) : "memory");
     return ret;
 }
 
 static inline int _syscall2(int num, u32 a1, u32 a2) {
     int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(num), "b"(a1), "c"(a2));
+    asm volatile("int $0x80" : "=a"(ret) : "a"(num), "b"(a1), "c"(a2) : "memory");
     return ret;
 }
 
 static inline int _syscall3(int num, u32 a1, u32 a2, u32 a3) {
     int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(num), "b"(a1), "c"(a2), "d"(a3));
+    asm volatile("int $0x80" : "=a"(ret) : "a"(num), "b"(a1), "c"(a2), "d"(a3) : "memory");
     return ret;
 }
 

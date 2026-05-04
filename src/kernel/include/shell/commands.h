@@ -31,5 +31,11 @@ int sh_help(int argc, char** argv);
 int sh_reboot(int argc, char** argv);
 int sh_shutdown(int argc, char** argv);
 int sh_vim(int argc, char** argv);
+int sh_date(int argc, char** argv);
+int sh_mem(int argc, char** argv);
+int sh_disks(int argc, char** argv);
+int sh_stat(int argc, char** argv);
+int sh_uptime(int argc, char** argv);
+int sh_panic(int argc, char** argv);
 
 #endif

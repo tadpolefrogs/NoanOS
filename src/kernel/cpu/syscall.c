@@ -7,6 +7,8 @@
 #include "io/terminal.h"
 #include "system/power.h"
 #include "core/panic.h"
+#include "system/rtc.h"
+#include "storage/ata.h"
 
 extern void syscall_stub(void);
 
@@ -81,6 +83,21 @@ u32 syscall_handler(u32 esp) {
             break;
         case SYS_PANIC:
             panic((const char*)arg1);
+            break;
+        case SYS_GET_TIME:
+            rtc_get_time((u8*)arg1, (u8*)arg2, (u8*)arg3);
+            break;
+        case SYS_GET_DATE:
+            rtc_get_date((u8*)arg1, (u8*)arg2, (u16*)arg3);
+            break;
+        case SYS_MEM_INFO:
+            get_malloc_info((malloc_info_t*)arg1);
+            break;
+        case SYS_LIST_DISKS:
+            ata_list_drives();
+            break;
+        case SYS_STAT:
+            fat32_stat((const char*)arg1);
             break;
         default:
             kprint("Unknown syscall: ");

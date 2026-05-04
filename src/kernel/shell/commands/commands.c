@@ -20,6 +20,11 @@ int sh_shutdown(int argc, char** argv);
 int sh_vim(int argc, char** argv);
 int sh_uptime(int argc, char** argv);
 int sh_panic(int argc, char** argv);
+int sh_date(int argc, char** argv);
+int sh_mem(int argc, char** argv);
+int sh_disks(int argc, char** argv);
+int sh_stat(int argc, char** argv);
+
 shell_command_t commands[] = {
     {"ls", sh_ls, "List directory contents"},
     {"cd", sh_cd, "Change directory"},
@@ -37,7 +42,11 @@ shell_command_t commands[] = {
     {"reboot", sh_reboot, "Reboot system"},
     {"shutdown", sh_shutdown, "Shutdown system"},
     {"uptime", sh_uptime, "Show system uptime"},
-    {"panic", sh_panic, "Trigger a kernel panic"}
+    {"panic", sh_panic, "Trigger a kernel panic"},
+    {"date", sh_date, "Show current date and time"},
+    {"mem", sh_mem, "Show memory usage statistics"},
+    {"disks", sh_disks, "List detected storage drives"},
+    {"stat", sh_stat, "Show file or directory information"}
 };
 
 int num_commands = sizeof(commands) / sizeof(shell_command_t);
