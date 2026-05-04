@@ -37,7 +37,7 @@ fs_type             db "FAT32   "
 code_offset     equ 0x08
 data_offset     equ 0x10
 kernel_segment  equ 0x1000  ; ES
-kernel_sectors  equ 64      ; # of sectors to read
+kernel_sectors  equ 120     ; # of sectors to read
 kernel_offset   equ 0x0000  ; Offset into segment
 kernel_start_addr equ 0x100000
 

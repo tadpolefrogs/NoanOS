@@ -16,18 +16,21 @@ ASMFLAGS = -f elf32
 # Source files
 BOOT_SRC = boot.asm
 KERNEL_ASM = kernel.asm interrupts.asm
-KERNEL_C = ../kernel/kernel.c ../kernel/kprint.c ../kernel/terminal.c ../kernel/idt.c ../kernel/keyboard.c ../kernel/shell.c ../kernel/malloc.c ../kernel/ata.c ../kernel/fat32.c ../kernel/installer.c ../kernel/timer.c ../kernel/rtc.c ../kernel/power.c ../kernel/gdt.c ../kernel/task.c ../kernel/syscall.c ../kernel/elf.c
-SH_C = ../kernel/sh/sh_ls.c ../kernel/sh/sh_cd.c ../kernel/sh/sh_pwd.c ../kernel/sh/sh_mkdir.c ../kernel/sh/sh_rm.c ../kernel/sh/sh_cp.c ../kernel/sh/sh_mv.c ../kernel/sh/sh_touch.c ../kernel/sh/sh_cat.c ../kernel/sh/sh_echo.c ../kernel/sh/sh_clear.c ../kernel/sh/sh_help.c ../kernel/sh/sh_reboot.c ../kernel/sh/sh_shutdown.c ../kernel/sh/commands.c ../kernel/sh/sh_vim.c
+KERNEL_C = ../kernel/core/kernel.c ../kernel/core/malloc.c ../kernel/core/memory_map.c ../kernel/core/panic.c ../kernel/cpu/gdt.c ../kernel/cpu/idt.c ../kernel/cpu/task.c ../kernel/cpu/syscall.c ../kernel/io/kprint.c ../kernel/io/terminal.c ../kernel/io/keyboard.c ../kernel/storage/ata.c ../kernel/storage/fat32.c ../kernel/storage/fat32_dir.c ../kernel/storage/fat32_file.c ../kernel/storage/elf.c ../kernel/system/timer.c ../kernel/system/rtc.c ../kernel/system/power.c ../kernel/shell/shell.c ../kernel/shell/installer.c
+SH_C = ../kernel/shell/commands/sh_uptime.c ../kernel/shell/commands/commands.c ../kernel/shell/commands/sh_ls.c ../kernel/shell/commands/sh_cd.c ../kernel/shell/commands/sh_pwd.c ../kernel/shell/commands/sh_mkdir.c ../kernel/shell/commands/sh_rm.c ../kernel/shell/commands/sh_cp.c ../kernel/shell/commands/sh_mv.c ../kernel/shell/commands/sh_touch.c ../kernel/shell/commands/sh_cat.c ../kernel/shell/commands/sh_echo.c ../kernel/shell/commands/sh_clear.c ../kernel/shell/commands/sh_help.c ../kernel/shell/commands/sh_reboot.c ../kernel/shell/commands/sh_shutdown.c ../kernel/shell/commands/sh_vim.c ../kernel/shell/commands/sh_panic.c
 
 # Output files
 BOOT_BIN = $(BIN_DIR)/boot.bin
 KERNEL_ELF = $(BUILD_DIR)/kernel.elf
 KERNEL_BIN = $(BIN_DIR)/kernel.bin
 
-# Object files
+# Object files - extract just the filename
 KERNEL_ASM_O = $(patsubst %.asm,$(BUILD_DIR)/%_asm.o,$(KERNEL_ASM))
-KERNEL_C_O = $(patsubst ../kernel/%.c,$(BUILD_DIR)/%.o,$(KERNEL_C))
-SH_C_O = $(patsubst ../kernel/sh/%.c,$(BUILD_DIR)/%.o,$(SH_C))
+KERNEL_C_O = $(addprefix $(BUILD_DIR)/,$(notdir $(KERNEL_C:.c=.o)))
+SH_C_O = $(addprefix $(BUILD_DIR)/,$(notdir $(SH_C:.c=.o)))
+
+# vpath allows make to find source files in subdirectories
+vpath %.c ../kernel/core ../kernel/cpu ../kernel/io ../kernel/storage ../kernel/system ../kernel/shell ../kernel/shell/commands
 
 DISK_IMG = $(BIN_DIR)/disk.img
 HDD_IMG = $(BIN_DIR)/hdd.img
@@ -58,17 +61,11 @@ $(BUILD_DIR)/%_asm.o: %.asm | $(BUILD_DIR)
 	@printf "\033[0;33m[%2d/$(TOTAL_FILES)]\033[0m Assembling \033[0;36m$(<F)\033[0m\n" $(CURRENT)
 	@$(ASM) $(ASMFLAGS) $< -o $@
 
-# Build kernel C object files
-$(BUILD_DIR)/%.o: ../kernel/%.c | $(BUILD_DIR)
+# Build kernel C object files (includes all subdirectories via vpath)
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	$(eval CURRENT := $(shell echo $$(($(CURRENT)+1))))
 	@printf "\033[0;32m[%2d/$(TOTAL_FILES)]\033[0m Compiling \033[0;36m$(<F)\033[0m\n" $(CURRENT)
-	@$(CC) $(CFLAGS) -I ../kernel -c $< -o $@
-
-# Build shell command object files
-$(BUILD_DIR)/%.o: ../kernel/sh/%.c | $(BUILD_DIR)
-	$(eval CURRENT := $(shell echo $$(($(CURRENT)+1))))
-	@printf "\033[0;32m[%2d/$(TOTAL_FILES)]\033[0m Compiling \033[0;36m$(<F)\033[0m\n" $(CURRENT)
-	@$(CC) $(CFLAGS) -I ../kernel -c $< -o $@
+	@$(CC) $(CFLAGS) -I ../kernel/include -c $< -o $@
 
 # Link kernel ELF
 $(KERNEL_ELF): $(KERNEL_ASM_O) $(KERNEL_C_O) $(SH_C_O)
