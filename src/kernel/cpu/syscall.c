@@ -68,6 +68,17 @@ u32 syscall_handler(u32 esp) {
                 return task_switch(esp);
             }
             break;
+        case SYS_READ_NB:
+            /* Non-blocking: returns the next char or 0 if the buffer is empty.
+             * Never sleeps, so safe to call in a drain loop. */
+            ret = keyboard_getchar();
+            break;
+        case SYS_FLUSH_KB:
+            keyboard_flush();
+            break;
+        case SYS_KB_ENABLE:
+            keyboard_set_enabled((int)arg1);
+            break;
         case SYS_MALLOC:
             ret = (u32)kmalloc(arg1);
             break;

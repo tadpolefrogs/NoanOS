@@ -46,8 +46,10 @@ static const char scancode_ascii_shift[] = {
 static char keyboard_buffer[BUFFER_SIZE];
 static volatile int buffer_head = 0;
 static volatile int buffer_tail = 0;
+static volatile int kb_enabled = 1;  /* 0 = discard input, 1 = buffer it */
 
 static void push_char(char c) {
+    if (!kb_enabled) return;  /* drop chars while a command is running */
     int next = (buffer_head + 1) % BUFFER_SIZE;
     if (next != buffer_tail) {
         keyboard_buffer[buffer_head] = c;
@@ -170,4 +172,15 @@ int keyboard_getchar(void) {
     int c = (unsigned char)keyboard_buffer[buffer_tail];
     buffer_tail = (buffer_tail + 1) % BUFFER_SIZE;
     return c;
+}
+
+void keyboard_flush(void) {
+    buffer_tail = buffer_head;
+}
+
+void keyboard_set_enabled(int enabled) {
+    kb_enabled = enabled;
+    /* No flush on re-enable: chars already in the buffer when the command
+     * started are legitimate type-ahead and should not be discarded.
+     * kb_enabled=0 already blocked any new chars during execution. */
 }

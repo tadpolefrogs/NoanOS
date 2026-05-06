@@ -57,57 +57,86 @@ static int strcmp(const char* s1, const char* s2) {
 }
 
 int execute_command(const char* cmd_line) {
-    char buf[256];
-    char* argv[32];
+    /* --- Step 1: Copy input into a mutable heap buffer ---
+     * cmd_line may be read-only; we need to write '\0' terminators into it.
+     * We allocate exactly (len+1) bytes so there is no fixed upper bound on
+     * input length beyond what SYS_MALLOC can satisfy. */
+    int len = 0;
+    while (cmd_line[len]) len++;
+
+    char* buf = (char*)_syscall1(SYS_MALLOC, len + 1);
+    if (!buf) return -1;
+
+    for (int i = 0; i <= len; i++) buf[i] = cmd_line[i];
+
+    /* --- Step 2: First pass — count tokens ---
+     * We count before allocating argv so the argv array is exactly the right
+     * size and can never overflow. */
     int argc = 0;
-    
-    // Copy to local buffer
-    int i = 0;
-    for (; cmd_line[i] && i < 255; i++) buf[i] = cmd_line[i];
-    buf[i] = '\0';
-
     char* p = buf;
-    while (*p && argc < 32) {
-        // Skip leading whitespace (anything <= 32 is treated as space)
-        while (*p && (unsigned char)*p <= 32) p++;
-        if (*p == '\0') break;
-
-        argv[argc++] = p;
-
-        // Find end of token
-        while (*p && (unsigned char)*p > 32) p++;
-        
-        if (*p == '\0') break;
-        *p++ = '\0'; // Null-terminate and advance
+    while (*p) {
+        while (*p && (unsigned char)*p <= 32) p++;   /* skip whitespace */
+        if (!*p) break;
+        argc++;
+        while (*p && (unsigned char)*p > 32) p++;    /* skip token */
     }
 
-    if (argc == 0) return 0;
+    if (argc == 0) {
+        _syscall1(SYS_FREE, (u32)buf);
+        return 0;
+    }
 
-    // Try built-in commands first
+    /* --- Step 3: Allocate argv and do second pass ---
+     * argv[argc] is kept as NULL (standard C convention) so any command that
+     * iterates until argv[i]==NULL works correctly without knowing argc. */
+    char** argv = (char**)_syscall1(SYS_MALLOC, (argc + 1) * sizeof(char*));
+    if (!argv) {
+        _syscall1(SYS_FREE, (u32)buf);
+        return -1;
+    }
+
+    int i = 0;
+    p = buf;
+    while (*p && i < argc) {
+        while (*p && (unsigned char)*p <= 32) p++;   /* skip whitespace */
+        if (!*p) break;
+
+        argv[i++] = p;                               /* record token start */
+
+        while (*p && (unsigned char)*p > 32) p++;    /* find token end */
+        if (*p) *p++ = '\0';                         /* null-terminate token */
+    }
+    argv[i] = (char*)0;  /* sentinel NULL — argv is now fully standard */
+
+    /* --- Step 4: Dispatch to built-in or external ---
+     * argv[0] is the command name; reset state is implicit because buf and
+     * argv are freshly allocated on every call. */
+    int ret = -1;
+
     for (int j = 0; j < num_commands; j++) {
         if (strcmp(argv[0], commands[j].name) == 0) {
-            return commands[j].handler(argc, argv);
+            ret = commands[j].handler(argc, argv);
+            goto done;
         }
     }
 
-    // If not a built-in, try to execute as external binary
-    // Pass full command line to SYS_EXEC which handles path parsing and argc/argv setup
+    /* Not a built-in — try SYS_EXEC with the original command line. */
     if (_syscall1(SYS_EXEC, (u32)cmd_line) == 0) {
-        return 0;  // Success
+        ret = 0;
+        goto done;
     }
 
-    // If execution failed - extract just the command name from original cmd_line
-    char cmd_name[64];
-    int k = 0;
-    for (int j = 0; cmd_line[j] && (unsigned char)cmd_line[j] > 32 && k < 63; j++) {
-        cmd_name[k++] = cmd_line[j];
-    }
-    cmd_name[k] = '\0';
-    
     _syscall1(SYS_PRINT, (u32)"Unknown command: ");
-    _syscall1(SYS_PRINT, (u32)cmd_name);
+    _syscall1(SYS_PRINT, (u32)argv[0]);
     _syscall1(SYS_PUTCHAR, '\n');
-    return -1;
+
+done:
+    /* --- Step 5: Always free both allocations before returning ---
+     * argv pointers all point into buf, so freeing buf first would corrupt
+     * argv — free argv first, then buf. */
+    _syscall1(SYS_FREE, (u32)argv);
+    _syscall1(SYS_FREE, (u32)buf);
+    return ret;
 }
 
 int execute_commands(const char* cmd_line) {

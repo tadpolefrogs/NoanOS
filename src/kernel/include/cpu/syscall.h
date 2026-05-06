@@ -32,6 +32,9 @@
 #define SYS_STAT      25
 #define SYS_GET_TICKS 26
 #define SYS_EXEC      27
+#define SYS_READ_NB   28   /* Non-blocking read: returns 0 immediately if no key waiting */
+#define SYS_FLUSH_KB  29   /* Discard all buffered keypresses */
+#define SYS_KB_ENABLE 30   /* 0 = discard input during command, 1 = re-enable + flush */
 
 void syscall_init(void);
 u32 syscall_handler(u32 esp);

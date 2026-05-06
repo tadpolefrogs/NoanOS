@@ -129,12 +129,14 @@ void shell_main(void) {
             cmd[len] = '\0';
             
             if (len > 0) {
-                add_history(cmd);
-                history_index = -1;
+                _syscall1(SYS_KB_ENABLE, 0);
                 execute_commands(cmd);
+                _syscall1(SYS_KB_ENABLE, 1);
+                add_history(cmd);  /* after execution so slow write doesn't block input */
+                history_index = -1;
             }
 
-
+            for (int i = 0; i < 128; i++) cmd[i] = 0;
             len = 0;
             history_index = -1;
             shell_print(current_path);
