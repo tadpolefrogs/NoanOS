@@ -132,7 +132,9 @@ found:
     }
     kfree(temp_buffer);
 
-    u32 final_entry = load_addr + header.entry_point;
+    // header.entry_point is offset from start of file (includes header)
+    // Subtract header size to get offset into payload
+    u32 final_entry = load_addr + (header.entry_point - sizeof(noan_header_t));
     return final_entry;
 }
 
@@ -163,41 +165,54 @@ void noan_execute(u32 entry, const char* cmd_line) {
     }
 
     // 3. Set up user stack with argc/argv
-    u32* ustack_base = (u32*)new_proc->ustack;
+    // new_proc->ustack points to the TOP of the user stack (highest address)
+    // The actual allocated memory is [ustack - STACK_SIZE, ustack)
     
-    // Copy strings to top of user stack
-    char* ustrings = (char*)ustack_base - 256;
-    u32 ustrings_addr = new_proc->ustack - 256;
-    u32 current_off = 0;
+    u32 stack_ptr = new_proc->ustack;
+    
+    // Reserve space and copy argument strings
     u32 argv_ptrs[16];
-
-    for (int j = 0; j < argc; j++) {
+    for (int j = argc - 1; j >= 0; j--) {
         int len = 0;
-        while(argv[j][len]) {
-            ustrings[current_off + len] = argv[j][len];
-            len++;
+        while(argv[j][len]) len++;
+        stack_ptr -= (len + 1);
+        
+        // Copy string to user stack memory
+        char* dest = (char*)stack_ptr;
+        for (int k = 0; k <= len; k++) {
+            dest[k] = argv[j][k];
         }
-        ustrings[current_off + len] = '\0';
-        argv_ptrs[j] = ustrings_addr + current_off;
-        current_off += len + 1;
+        argv_ptrs[j] = stack_ptr;
     }
-
-    // Set up argv array pointers
-    u32* uargv_array = (u32*)(ustrings - 64);
-    u32 uargv_array_addr = ustrings_addr - 64;
-    for (int j = 0; j < argc; j++) {
-        uargv_array[j] = argv_ptrs[j];
+    
+    // Align to 4-byte boundary
+    stack_ptr &= ~3;
+    
+    // Push argv array (NULL-terminated)
+    stack_ptr -= 4;
+    *(u32*)stack_ptr = 0; // NULL terminator
+    
+    for (int j = argc - 1; j >= 0; j--) {
+        stack_ptr -= 4;
+        *(u32*)stack_ptr = argv_ptrs[j];
     }
-
-    // Final C call frame
-    u32* final_esp = (u32*)(uargv_array - 4);
-    final_esp[0] = 0xDEADBEEF; // dummy ret
-    final_esp[1] = argc;
-    final_esp[2] = uargv_array_addr;
-
+    u32 argv_addr = stack_ptr;
+    
+    // Push argc and argv pointer as function arguments
+    stack_ptr -= 4;
+    *(u32*)stack_ptr = argv_addr; // argv
+    stack_ptr -= 4;
+    *(u32*)stack_ptr = argc; // argc
+    stack_ptr -= 4;
+    *(u32*)stack_ptr = 0xDEADBEEF; // return address
+    
     // Update saved ESP in IRET frame on kernel stack
     u32* kstack = (u32*)new_proc->esp;
-    kstack[14] = (u32)final_esp;
+    kstack[14] = stack_ptr;
+    
+    kprint("[noan] kstack[14] after=");
+    kprint_hex(kstack[14]);
+    kprint("\n");
 
     // BLOCK the parent (shell) until the child is done
     if (parent) parent->state = TASK_WAITING;

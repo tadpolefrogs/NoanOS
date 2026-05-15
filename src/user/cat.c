@@ -8,11 +8,6 @@ void _start(int argc, char** argv) {
     }
 
     const char* filename = argv[1];
-    
-    // Debug print
-    _syscall1(SYS_PRINT, (u32)"[NOAN] cat opening: ");
-    _syscall1(SYS_PRINT, (u32)filename);
-    _syscall1(SYS_PRINT, (u32)"\n");
 
     char* buf = (char*)_syscall1(SYS_MALLOC, 4096);
     if (buf) {
