@@ -79,7 +79,7 @@ int fat32_read(const char* name, char* buffer, u32 max_len) {
     // Read sector by sector, following the FAT chain
     while (total_read < size && cluster < 0x0FFFFFF8 && cluster >= 2) {
         // Each cluster may have multiple sectors - we need to read all of them
-        fat32_bpb_t* bpb = _fat32_get_bpb();
+
         u32 sectors_per_cluster = bpb ? bpb->sectors_per_cluster : 1;
         if (sectors_per_cluster == 0 || sectors_per_cluster > 128) sectors_per_cluster = 1;
         

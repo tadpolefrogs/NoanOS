@@ -56,17 +56,7 @@ static char wait_for_key(void) {
     return c;
 }
 
-static char wait_for_key_timeout(int seconds) {
-    u32 start_ticks = timer_get_ticks();
-    u32 timeout_ticks = seconds * 100; // 100Hz
 
-    while (timer_get_ticks() < start_ticks + timeout_ticks) {
-        char c = keyboard_getchar();
-        if (c) return c;
-        asm volatile("hlt");
-    }
-    return 0; // Timeout
-}
 
 static void reboot_os(void) {
     kprint("Rebooting...\n");
